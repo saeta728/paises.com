@@ -1,0 +1,61 @@
+using UnityEngine;
+using UnityEngine.UI; // Necesario para interactuar con UI si se muestra el propietario
+
+public class TerritoryZone : MonoBehaviour
+{
+    // Variables públicas que se pueden ajustar en el Inspector de Unity
+    public int zoneID;
+    public string ownerName = "Neutral";
+    public Color neutralColor = Color.white;
+    public Color playerOneColor = Color.blue;
+    public Color playerTwoColor = Color.red;
+
+    private Renderer zoneRenderer;
+
+    void Start()
+    {
+        // Obtiene el componente Renderer para cambiar el color visualmente
+        zoneRenderer = GetComponent<Renderer>();
+        UpdateZoneColor();
+    }
+
+    // Método para cambiar el propietario de la zona
+    public void CaptureZone(string newOwner)
+    {
+        ownerName = newOwner;
+        UpdateZoneColor();
+        Debug.Log("Zona " + zoneID + " capturada por " + ownerName);
+    }
+
+    // Actualiza el color de la zona según el propietario
+    void UpdateZoneColor()
+    {
+        if (zoneRenderer != null)
+        {
+            if (ownerName == "Neutral")
+            {
+                zoneRenderer.material.color = neutralColor;
+            }
+            else if (ownerName == "Jugador 1")
+            {
+                zoneRenderer.material.color = playerOneColor;
+            }
+            else if (ownerName == "Jugador 2")
+            {
+                zoneRenderer.material.color = playerTwoColor;
+            }
+            // Añadir más casos para más jugadores
+        }
+    }
+
+    // Ejemplo de cómo detectar un jugador entrando en la zona (requiere Collider con IsTrigger=true)
+    void OnTriggerEnter(Collider other)
+    {
+        if (other.CompareTag("Player"))
+        {
+            // Lógica para iniciar el proceso de captura
+            Debug.Log(other.name + " ha entrado en la zona de captura.");
+            // Aquí llamarías a una función que inicie un temporizador o una batalla
+        }
+    }
+}
