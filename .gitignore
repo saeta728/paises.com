@@ -1,61 +1,124 @@
 using UnityEngine;
-using UnityEngine.UI; // Necesario para interactuar con UI si se muestra el propietario
+using UnityEngine.Events;
 
+[RequireComponent(typeof(Collider), typeof(Renderer))]
 public class TerritoryZone : MonoBehaviour
 {
-    // Variables públicas que se pueden ajustar en el Inspector de Unity
     public int zoneID;
     public string ownerName = "Neutral";
     public Color neutralColor = Color.white;
-    public Color playerOneColor = Color.blue;
-    public Color playerTwoColor = Color.red;
+    public Color teamAColor = Color.blue;
+    public Color teamBColor = Color.red;
+
+    [Range(0f, 1f)] public float captureProgress = 0f;
+    public float captureSpeed = 0.25f; // progress per second while a single team is in zone
+    public float decaySpeed = 0.15f;   // progress per second reverting to neutral when empty or contested
 
     private Renderer zoneRenderer;
 
-    void Start()
+    // Simple event you can hook in inspector to react to captures (no params)
+    public UnityEvent onCapture;
+
+    void Awake()
     {
-        // Obtiene el componente Renderer para cambiar el color visualmente
         zoneRenderer = GetComponent<Renderer>();
-        UpdateZoneColor();
+        if (onCapture == null) onCapture = new UnityEvent();
+
+        // Ensure collider is trigger for OnTrigger callbacks
+        var col = GetComponent<Collider>();
+        col.isTrigger = true;
     }
 
-    // Método para cambiar el propietario de la zona
-    public void CaptureZone(string newOwner)
+    void Update()
     {
-        ownerName = newOwner;
         UpdateZoneColor();
-        Debug.Log("Zona " + zoneID + " capturada por " + ownerName);
     }
 
-    // Actualiza el color de la zona según el propietario
     void UpdateZoneColor()
     {
-        if (zoneRenderer != null)
+        if (zoneRenderer == null) return;
+
+        Color target = neutralColor;
+        if (ownerName == "TeamA") target = teamAColor;
+        else if (ownerName == "TeamB") target = teamBColor;
+
+        // Blend neutral toward owner's color based on captureProgress
+        Color blended = Color.Lerp(neutralColor, target, captureProgress);
+        zoneRenderer.material.color = blended;
+    }
+
+    void OnTriggerStay(Collider other)
+    {
+        var pc = other.GetComponent<PlayerController>();
+        if (pc == null) return;
+
+        // Check which teams are inside the zone by overlapping the zone bounds.
+        // Use Collider bounds to approximate the zone area.
+        Collider zoneCol = GetComponent<Collider>();
+        Bounds b = zoneCol.bounds;
+        Collider[] colliders = Physics.OverlapBox(b.center, b.extents, transform.rotation);
+        bool hasA = false, hasB = false;
+        foreach (var c in colliders)
         {
-            if (ownerName == "Neutral")
-            {
-                zoneRenderer.material.color = neutralColor;
-            }
-            else if (ownerName == "Jugador 1")
-            {
-                zoneRenderer.material.color = playerOneColor;
-            }
-            else if (ownerName == "Jugador 2")
-            {
-                zoneRenderer.material.color = playerTwoColor;
-            }
-            // Añadir más casos para más jugadores
+            var p = c.GetComponent<PlayerController>();
+            if (p == null) continue;
+            if (p.team == PlayerTeam.TeamA) hasA = true;
+            if (p.team == PlayerTeam.TeamB) hasB = true;
+            if (hasA && hasB) break;
+        }
+
+        if (hasA && !hasB)
+        {
+            AttemptCapture("TeamA", captureSpeed * Time.deltaTime);
+        }
+        else if (hasB && !hasA)
+        {
+            AttemptCapture("TeamB", captureSpeed * Time.deltaTime);
+        }
+        else
+        {
+            // contested (both teams) or empty -> decay toward neutral
+            DecayTowardsNeutral(decaySpeed * Time.deltaTime);
         }
     }
 
-    // Ejemplo de cómo detectar un jugador entrando en la zona (requiere Collider con IsTrigger=true)
-    void OnTriggerEnter(Collider other)
+    void OnTriggerExit(Collider other)
     {
-        if (other.CompareTag("Player"))
+        // When players leave, the Update loop / other triggers will cause decay via DecayTowardsNeutral.
+        // Nothing required here explicitly.
+    }
+
+    void AttemptCapture(string team, float delta)
+    {
+        // If zone already owned by team, keep progress at 1
+        if (ownerName == team)
         {
-            // Lógica para iniciar el proceso de captura
-            Debug.Log(other.name + " ha entrado en la zona de captura.");
-            // Aquí llamarías a una función que inicie un temporizador o una batalla
+            captureProgress = Mathf.Clamp01(captureProgress + delta);
+            return;
+        }
+
+        // If currently neutral or owned by other team, progress towards the capturing team
+        captureProgress = Mathf.Clamp01(captureProgress + delta);
+
+        // If progress reaches 1, flip ownership
+        if (captureProgress >= 1f)
+        {
+            ownerName = team;
+            captureProgress = 1f;
+            Debug.Log($"Zone {zoneID} captured by {ownerName}");
+            onCapture?.Invoke();
+        }
+    }
+
+    void DecayTowardsNeutral(float delta)
+    {
+        // Decrease progress; if it reaches 0 and previously owned, set to Neutral
+        captureProgress = Mathf.Clamp01(captureProgress - delta);
+        if (captureProgress <= 0f && ownerName != "Neutral")
+        {
+            ownerName = "Neutral";
+            Debug.Log($"Zone {zoneID} reverted to Neutral");
+            onCapture?.Invoke();
         }
     }
 }
